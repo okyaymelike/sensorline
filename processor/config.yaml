@@ -1,0 +1,20 @@
+# Processor tuning. Infra config (db, kafka, ports) lives in env / .env;
+# this file is the domain config — detection windows and per-metric limits.
+
+cycle_seconds: 5      # how often the processor sweeps
+drift_window: 30      # trailing readings averaged for drift-vs-baseline
+gap_seconds: 20       # a sampled_at gap larger than this = offline
+spike_window: 20      # trailing readings for the spike mean/std
+
+# Engineering limits per metric.
+thresholds:
+  temperature_c:
+    valid_range: [-10.0, 60.0]
+    baseline: 22.0
+    spike_sigma: 4.0
+    drift_delta: 3.0
+  vibration_mm_s:
+    valid_range: [0.0, 20.0]
+    baseline: 1.2
+    spike_sigma: 4.0
+    drift_delta: 2.0

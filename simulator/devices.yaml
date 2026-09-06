@@ -1,0 +1,55 @@
+# Device fleet. A new device onboards by adding an entry here — the pipeline
+# never hardcodes a device.
+devices:
+  - external_id: temp-01
+    kind: temp-probe
+    location: rack-a
+    firmware: "1.4.2"
+    metric: temperature_c
+    unit: C
+    baseline: 22.0
+    noise: 0.30
+    interval_seconds: 2
+    valid_range: [-10, 60]
+
+  - external_id: temp-02
+    kind: temp-probe
+    location: rack-b
+    firmware: "1.4.2"
+    metric: temperature_c
+    unit: C
+    baseline: 21.5
+    noise: 0.30
+    interval_seconds: 2
+    valid_range: [-10, 60]
+
+  - external_id: vib-01
+    kind: vibration
+    location: rack-a
+    firmware: "2.0.1"
+    metric: vibration_mm_s
+    unit: mm/s
+    baseline: 1.20
+    noise: 0.10
+    interval_seconds: 2
+    valid_range: [0, 20]
+
+# Reproducible fault injections, activated by name with `--scenario <name>`.
+scenarios:
+  drift:               # temp-01 slowly reads high — a warming calibration fault
+    device: temp-01
+    type: drift
+    after_seconds: 30
+    rate_per_min: 1.5  # +1.5 C per minute after it starts
+
+  offline_gap:         # temp-02 stops reporting for a while
+    device: temp-02
+    type: offline
+    after_seconds: 40
+    duration_seconds: 60
+
+  spike:               # vib-01 throws a single large transient
+    device: vib-01
+    type: spike
+    after_seconds: 25
+    magnitude: 9.0

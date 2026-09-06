@@ -1,0 +1,22 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+
+  - name: TelemetryDB
+    type: postgres
+    uid: telemetrydb
+    access: proxy
+    url: postgres:5432
+    user: ${TELEMETRY_DB_USER}
+    jsonData:
+      database: ${TELEMETRY_DB_NAME}
+      sslmode: disable
+      postgresVersion: 1600
+    secureJsonData:
+      password: ${TELEMETRY_DB_PASSWORD}

@@ -59,6 +59,12 @@ processor. Design reasoning (delivery semantics, commit ordering, failure modes)
 is in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md); worked investigations are
 in [`docs/incidents/`](docs/incidents/).
 
+A query-performance study on a 3.45M-row table — profiling three slow paths with
+`EXPLAIN (ANALYZE, BUFFERS)` and fixing them (BRIN index, a LATERAL rewrite that
+takes latest-per-device from 48s to 0.4ms, and a materialized rollup) — is in
+[`docs/sql-performance.md`](docs/sql-performance.md), reproducible via
+[`db/perf/run.sh`](db/perf/run.sh).
+
 ## Project structure
 
 ```
@@ -66,7 +72,7 @@ common/       config, wire contract (Reading), data-access layer
 simulator/    device fleet (devices.yaml) + fault injection + backfill
 ingester/     Kafka consumer → Postgres, idempotent, exposes metrics
 processor/    evaluation + anomaly detection; tuning in config.yaml
-db/           schema.sql + investigative queries in queries/
+db/           schema.sql, investigative queries in queries/, perf study in perf/
 grafana/      provisioned datasources + dashboard
 prometheus/   scrape config
 docs/         ARCHITECTURE.md + incidents/

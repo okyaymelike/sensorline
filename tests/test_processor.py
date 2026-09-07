@@ -73,6 +73,46 @@ def test_offline_gap_is_raised(db):
         assert _anomaly_count(cur, dev, "offline_gap") == 1
 
 
+def test_incremental_evaluation_via_checkpoint(db):
+    with db.cursor() as cur:
+        dev = make_device(cur, "temp-incr")
+        base = datetime.now(UTC) - timedelta(minutes=10)
+        seed_readings(cur, dev, values=[22.0] * 25, start=base)
+        evaluate(cur, dev, "temperature_c", TEMP, spike_window=20)
+
+        cur.execute(
+            "SELECT last_sampled_at FROM processor_checkpoint WHERE device_id=%s AND metric=%s",
+            (dev, "temperature_c"),
+        )
+        assert cur.fetchone() is not None  # checkpoint advanced on first pass
+
+        # newer batch with a spike; a second pass must catch it without re-evaluating
+        seed_readings(cur, dev, values=[22.0] * 3 + [50.0], start=datetime.now(UTC))
+        evaluate(cur, dev, "temperature_c", TEMP, spike_window=20)
+
+        cur.execute(
+            """
+            SELECT count(*) FROM reading r
+            WHERE r.device_id = %s
+              AND NOT EXISTS (SELECT 1 FROM reading_stage s
+                              WHERE s.reading_id = r.id AND s.stage = 'evaluated')
+            """,
+            (dev,),
+        )
+        assert cur.fetchone()[0] == 0  # nothing left unevaluated
+
+        cur.execute(
+            """
+            SELECT count(*) FROM reading_stage s
+            JOIN reading r ON r.id = s.reading_id
+            WHERE r.device_id = %s AND s.stage = 'evaluated'
+            """,
+            (dev,),
+        )
+        assert cur.fetchone()[0] == 29  # 25 + 4, each evaluated exactly once
+        assert _anomaly_count(cur, dev, "spike") >= 1
+
+
 def test_evaluate_completes_genealogy(db):
     with db.cursor() as cur:
         dev = make_device(cur, "temp-eval")

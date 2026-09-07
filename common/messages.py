@@ -1,5 +1,5 @@
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 
 
 # The wire contract every source emits to the readings topic.
@@ -19,4 +19,8 @@ class Reading:
 
     @staticmethod
     def from_bytes(raw: bytes) -> "Reading":
-        return Reading(**json.loads(raw.decode("utf-8")))
+        # Tolerant reader: ignore unknown keys (e.g. a producer's schema_version)
+        # so the wire contract can gain fields without breaking this consumer.
+        data = json.loads(raw.decode("utf-8"))
+        known = {f.name for f in fields(Reading)}
+        return Reading(**{k: v for k, v in data.items() if k in known})

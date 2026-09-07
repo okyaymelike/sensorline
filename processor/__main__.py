@@ -34,26 +34,46 @@ def device_metric_pairs(cur) -> list[tuple[int, str]]:
 
 
 # Each reading with the mean/std of its own trailing window, so spike detection
-# compares a value against its local neighbourhood, not a global mean.
-def readings_with_stats(cur, device_id: int, metric: str, spike_window: int):
+# compares a value against its local neighbourhood, not a global mean. `since`
+# bounds the scan to recent readings; it must be a concrete value, not a subquery,
+# or the planner misestimates and adds JIT + a reading_stage seq scan.
+def readings_with_stats(cur, device_id: int, metric: str, spike_window: int, since=None):
+    bound = "AND r.sampled_at >= %(since)s" if since is not None else ""
     cur.execute(
         f"""
-        SELECT id, value, mean, std, evaluated FROM (
+        SELECT id, value, mean, std, evaluated, sampled_at FROM (
             SELECT r.id,
                    r.value,
+                   r.sampled_at,
                    AVG(r.value) OVER w                        AS mean,
                    COALESCE(STDDEV_POP(r.value) OVER w, 0)    AS std,
                    EXISTS(SELECT 1 FROM reading_stage s
                           WHERE s.reading_id = r.id AND s.stage = 'evaluated') AS evaluated
             FROM reading r
-            WHERE r.device_id = %s AND r.metric = %s
+            WHERE r.device_id = %(device)s AND r.metric = %(metric)s {bound}
             WINDOW w AS (ORDER BY r.sampled_at ROWS BETWEEN {int(spike_window)} PRECEDING AND CURRENT ROW)
         ) t
         ORDER BY id
         """,
-        (device_id, metric),
+        {"device": device_id, "metric": metric, "since": since},
     )
     return cur.fetchall()
+
+
+# sampled_at of the row `spike_window` positions at/before the checkpoint, so the
+# bounded rescan still carries a full trailing window for the first new reading.
+def window_anchor(cur, device_id: int, metric: str, checkpoint, spike_window: int):
+    cur.execute(
+        """
+        SELECT sampled_at FROM reading
+        WHERE device_id = %s AND metric = %s AND sampled_at <= %s
+        ORDER BY sampled_at DESC
+        OFFSET %s LIMIT 1
+        """,
+        (device_id, metric, checkpoint, spike_window),
+    )
+    row = cur.fetchone()
+    return row[0] if row else None
 
 
 def recent_mean(cur, device_id: int, metric: str, window: int) -> float | None:
@@ -89,9 +109,14 @@ def latest_gap_seconds(cur, device_id: int, metric: str) -> float | None:
 
 def evaluate(cur, device_id, metric, mt: MetricThresholds, spike_window: int) -> None:
     lo, hi = mt.valid_range
-    for rid, value, mean, std, evaluated in readings_with_stats(
-        cur, device_id, metric, spike_window
+    checkpoint = repo.get_eval_checkpoint(cur, device_id, metric)
+    since = window_anchor(cur, device_id, metric, checkpoint, spike_window) if checkpoint else None
+    max_sampled = None
+    for rid, value, mean, std, evaluated, sampled_at in readings_with_stats(
+        cur, device_id, metric, spike_window, since
     ):
+        if max_sampled is None or sampled_at > max_sampled:
+            max_sampled = sampled_at
         if evaluated:
             continue
         value, mean, std = float(value), float(mean), float(std)
@@ -117,6 +142,9 @@ def evaluate(cur, device_id, metric, mt: MetricThresholds, spike_window: int) ->
         else:
             repo.add_stage(cur, rid, "evaluated", "ok")
         EVALUATED.inc()
+
+    if max_sampled is not None:
+        repo.set_eval_checkpoint(cur, device_id, metric, max_sampled)
 
 
 def check_fleet_anomalies(

@@ -31,6 +31,9 @@ CREATE TABLE IF NOT EXISTS reading (
 );
 CREATE INDEX IF NOT EXISTS reading_device_time_idx ON reading (device_id, sampled_at DESC);
 CREATE INDEX IF NOT EXISTS reading_metric_time_idx ON reading (metric, sampled_at DESC);
+-- BRIN for fleet-wide time-range scans: tiny, and effective because readings are
+-- appended in sampled_at order. See docs/sql-performance.md (Case 1).
+CREATE INDEX IF NOT EXISTS reading_sampled_at_brin ON reading USING brin (sampled_at) WITH (pages_per_range = 32);
 
 -- reading genealogy: one row per stage each reading passes through
 -- (ingested -> validated -> enriched -> evaluated).
@@ -43,6 +46,9 @@ CREATE TABLE IF NOT EXISTS reading_stage (
     at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS reading_stage_reading_idx ON reading_stage (reading_id);
+-- Partial index for the processor's evaluated-stage check. See
+-- docs/sql-performance.md (Case 4).
+CREATE INDEX IF NOT EXISTS reading_stage_evaluated_idx ON reading_stage (reading_id) WHERE stage = 'evaluated';
 
 -- anomalies
 CREATE TABLE IF NOT EXISTS anomaly (
@@ -63,6 +69,17 @@ CREATE TABLE IF NOT EXISTS device_heartbeat (
     device_id    BIGINT      PRIMARY KEY REFERENCES device(id),
     last_seen_at TIMESTAMPTZ NOT NULL,
     last_offset  BIGINT      NOT NULL
+);
+
+-- processor evaluation cursor: the newest sampled_at evaluated per (device,
+-- metric), so the processor bounds each rescan to recent readings instead of
+-- re-reading full history. See docs/sql-performance.md (Case 4).
+CREATE TABLE IF NOT EXISTS processor_checkpoint (
+    device_id       BIGINT      NOT NULL REFERENCES device(id),
+    metric          TEXT        NOT NULL,
+    last_sampled_at TIMESTAMPTZ NOT NULL,
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (device_id, metric)
 );
 
 -- consumer offset bookkeeping (lag visibility)

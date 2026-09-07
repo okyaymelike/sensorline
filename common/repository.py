@@ -98,6 +98,28 @@ def upsert_heartbeat(cur: psycopg.Cursor, device_id: int, seen_at: str, offset_:
     )
 
 
+def get_eval_checkpoint(cur: psycopg.Cursor, device_id: int, metric: str):
+    cur.execute(
+        "SELECT last_sampled_at FROM processor_checkpoint WHERE device_id = %s AND metric = %s",
+        (device_id, metric),
+    )
+    row = cur.fetchone()
+    return row[0] if row else None
+
+
+def set_eval_checkpoint(cur: psycopg.Cursor, device_id: int, metric: str, sampled_at) -> None:
+    cur.execute(
+        """
+        INSERT INTO processor_checkpoint (device_id, metric, last_sampled_at)
+        VALUES (%s, %s, %s)
+        ON CONFLICT (device_id, metric) DO UPDATE
+            SET last_sampled_at = EXCLUDED.last_sampled_at,
+                updated_at      = now()
+        """,
+        (device_id, metric, sampled_at),
+    )
+
+
 def upsert_checkpoint(
     cur: psycopg.Cursor, consumer: str, topic: str, partition: int, offset_: int
 ) -> None:

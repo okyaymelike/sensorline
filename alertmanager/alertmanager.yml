@@ -1,0 +1,11 @@
+# Minimal local config: alerts group and surface in the Alertmanager UI
+# (http://localhost:9093). No external receiver is wired for the demo.
+route:
+  receiver: default
+  group_by: ["alertname"]
+  group_wait: 10s
+  group_interval: 30s
+  repeat_interval: 1h
+
+receivers:
+  - name: default

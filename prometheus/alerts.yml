@@ -1,0 +1,47 @@
+groups:
+  - name: sensorline
+    rules:
+      - alert: ServiceDown
+        expr: up{job=~"ingester|processor|api|simulator"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.job }} target is down"
+          description: "Prometheus has not scraped {{ $labels.job }} for over 1m."
+
+      - alert: NoReadingsIngested
+        expr: sum(rate(ingester_readings_ingested_total[2m])) == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No readings ingested in the last 2m"
+          description: "The ingestion pipeline appears stalled (no new readings written)."
+
+      - alert: HighConsumerLag
+        expr: sum(ingester_consumer_lag) > 500
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Kafka consumer lag high"
+          description: "Ingester is {{ $value }} messages behind the topic head."
+
+      - alert: HighIngestLag
+        expr: histogram_quantile(0.95, sum(rate(ingester_ingest_lag_seconds_bucket[5m])) by (le)) > 30
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p95 ingest lag over 30s"
+          description: "Readings are reaching the platform more than 30s after the device clock."
+
+      - alert: ApiServerErrors
+        expr: sum(rate(http_requests_total{status=~"5.."}[2m])) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API is returning 5xx responses"
+          description: "The read API has server errors over the last 2m."

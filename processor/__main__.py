@@ -3,14 +3,21 @@ from __future__ import annotations
 import signal
 import time
 
-from prometheus_client import Counter, start_http_server
+from prometheus_client import Counter, Histogram, start_http_server
 
 from common import repository as repo
 from common.config import load_config
+from common.telemetry import get_logger, init_logging
 from processor.settings import MetricThresholds, ProcessorSettings, load_settings
 
 ANOMALIES = Counter("processor_anomalies_total", "Anomalies raised", ["type"])
 EVALUATED = Counter("processor_readings_evaluated_total", "Readings evaluated")
+CYCLE_SECONDS = Histogram(
+    "processor_cycle_seconds",
+    "Time to evaluate one full sweep",
+    buckets=(0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0),
+)
+log = get_logger("processor")
 
 _running = True
 
@@ -128,6 +135,7 @@ def evaluate(cur, device_id, metric, mt: MetricThresholds, spike_window: int) ->
             )
             repo.add_stage(cur, rid, "evaluated", "warn", {"reason": "out_of_range"})
             ANOMALIES.labels(type="out_of_range").inc()
+            log.info("anomaly type=out_of_range device=%s metric=%s value=%s", device_id, metric, value)
         elif std > 0 and abs(value - mean) > mt.spike_sigma * std:
             repo.record_anomaly(
                 cur,
@@ -139,6 +147,7 @@ def evaluate(cur, device_id, metric, mt: MetricThresholds, spike_window: int) ->
             )
             repo.add_stage(cur, rid, "evaluated", "warn", {"reason": "spike"})
             ANOMALIES.labels(type="spike").inc()
+            log.info("anomaly type=spike device=%s metric=%s value=%s", device_id, metric, value)
         else:
             repo.add_stage(cur, rid, "evaluated", "ok")
         EVALUATED.inc()
@@ -165,6 +174,7 @@ def check_fleet_anomalies(
             {"recent_mean": round(mean, 3), "baseline": mt.baseline},
         )
         ANOMALIES.labels(type="drift").inc()
+        log.info("anomaly type=drift device=%s metric=%s mean=%s", device_id, metric, round(mean, 3))
 
     gap = latest_gap_seconds(cur, device_id, metric)
     if (
@@ -176,6 +186,7 @@ def check_fleet_anomalies(
             cur, device_id, None, "offline_gap", "critical", {"gap_seconds": round(gap, 1)}
         )
         ANOMALIES.labels(type="offline_gap").inc()
+        log.info("anomaly type=offline_gap device=%s metric=%s gap=%s", device_id, metric, round(gap, 1))
 
 
 def run_cycle(cur, settings: ProcessorSettings) -> None:
@@ -195,19 +206,22 @@ def main() -> None:
 
     cfg = load_config()
     settings = load_settings()
+    init_logging("sensorline-processor")
     start_http_server(cfg.processor_metrics_port)
     conn = repo.connect(cfg.database_url)
-    print("processor evaluating — ctrl-c to stop")
+    log.info("processor evaluating (cycle=%ss)", settings.cycle_seconds)
 
     try:
         while _running:
+            started = time.perf_counter()
             with conn.cursor() as cur:
                 run_cycle(cur, settings)
             conn.commit()
+            CYCLE_SECONDS.observe(time.perf_counter() - started)
             time.sleep(settings.cycle_seconds)
     finally:
         conn.close()
-        print("\nprocessor stopped")
+        log.info("processor stopped")
 
 
 if __name__ == "__main__":

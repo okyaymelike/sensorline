@@ -1,6 +1,7 @@
 FROM python:3.12-slim
 
 WORKDIR /app
+ENV PYTHONUNBUFFERED=1
 
 # confluent-kafka and psycopg ship binary wheels, so no system build deps needed.
 COPY requirements.txt .

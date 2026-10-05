@@ -1,0 +1,169 @@
+# Richer fleet for demos / the web dashboard. The canonical minimal fleet stays
+# in devices.yaml; run this one with: python -m simulator --config devices.demo.yaml
+# Nothing in the pipeline is device-specific — these onboard purely by being here.
+devices:
+  # rack-a
+  - external_id: temp-01
+    kind: temp-probe
+    location: rack-a
+    firmware: "1.4.2"
+    metric: temperature_c
+    unit: C
+    baseline: 22.0
+    noise: 0.30
+    interval_seconds: 2
+    valid_range: [-10, 60]
+  - external_id: vib-01
+    kind: vibration
+    location: rack-a
+    firmware: "2.0.1"
+    metric: vibration_mm_s
+    unit: mm/s
+    baseline: 1.20
+    noise: 0.10
+    interval_seconds: 2
+    valid_range: [0, 20]
+  - external_id: flow-01
+    kind: flow
+    location: rack-a
+    firmware: "1.1.0"
+    metric: flow_lpm
+    unit: L/min
+    baseline: 12.4
+    noise: 0.50
+    interval_seconds: 2
+    valid_range: [0, 50]
+
+  # rack-b
+  - external_id: temp-02
+    kind: temp-probe
+    location: rack-b
+    firmware: "1.4.2"
+    metric: temperature_c
+    unit: C
+    baseline: 21.5
+    noise: 0.30
+    interval_seconds: 2
+    valid_range: [-10, 60]
+  - external_id: hum-01
+    kind: humidity
+    location: rack-b
+    firmware: "3.0.0"
+    metric: humidity_pct
+    unit: "%"
+    baseline: 45.0
+    noise: 1.20
+    interval_seconds: 2
+    valid_range: [0, 100]
+  - external_id: curr-01
+    kind: current
+    location: rack-b
+    firmware: "1.0.4"
+    metric: current_a
+    unit: A
+    baseline: 8.20
+    noise: 0.30
+    interval_seconds: 2
+    valid_range: [0, 30]
+
+  # rack-c
+  - external_id: temp-03
+    kind: temp-probe
+    location: rack-c
+    firmware: "1.4.3"
+    metric: temperature_c
+    unit: C
+    baseline: 23.0
+    noise: 0.35
+    interval_seconds: 2
+    valid_range: [-10, 60]
+  - external_id: pres-01
+    kind: pressure
+    location: rack-c
+    firmware: "2.2.0"
+    metric: pressure_kpa
+    unit: kPa
+    baseline: 101.3
+    noise: 0.40
+    interval_seconds: 2
+    valid_range: [80, 120]
+  - external_id: rpm-01
+    kind: motor-speed
+    location: rack-c
+    firmware: "0.9.7"
+    metric: speed_rpm
+    unit: rpm
+    baseline: 1480.0
+    noise: 6.00
+    interval_seconds: 2
+    valid_range: [0, 3000]
+
+  # rack-d
+  - external_id: vib-02
+    kind: vibration
+    location: rack-d
+    firmware: "2.0.1"
+    metric: vibration_mm_s
+    unit: mm/s
+    baseline: 0.90
+    noise: 0.10
+    interval_seconds: 2
+    valid_range: [0, 20]
+  - external_id: pres-02
+    kind: pressure
+    location: rack-d
+    firmware: "2.2.0"
+    metric: pressure_kpa
+    unit: kPa
+    baseline: 99.8
+    noise: 0.50
+    interval_seconds: 2
+    valid_range: [80, 120]
+  - external_id: co2-01
+    kind: air-quality
+    location: rack-d
+    firmware: "1.3.1"
+    metric: co2_ppm
+    unit: ppm
+    baseline: 620.0
+    noise: 25.0
+    interval_seconds: 2
+    valid_range: [0, 5000]
+
+# Fault injections. Pass several at once: --scenario drift,spike,current_surge
+scenarios:
+  drift:
+    device: temp-01
+    type: drift
+    after_seconds: 30
+    rate_per_min: 1.5
+  offline_gap:
+    device: temp-02
+    type: offline
+    after_seconds: 40
+    duration_seconds: 60
+  spike:
+    device: vib-01
+    type: spike
+    after_seconds: 25
+    magnitude: 9.0
+  pressure_drift:
+    device: pres-01
+    type: drift
+    after_seconds: 20
+    rate_per_min: 2.0
+  flow_spike:
+    device: flow-01
+    type: spike
+    after_seconds: 35
+    magnitude: 28.0
+  current_surge:       # pushes curr-01 past its 30 A valid range -> out_of_range
+    device: curr-01
+    type: spike
+    after_seconds: 45
+    magnitude: 25.0
+  co2_offline:
+    device: co2-01
+    type: offline
+    after_seconds: 50
+    duration_seconds: 80

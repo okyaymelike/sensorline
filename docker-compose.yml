@@ -44,6 +44,16 @@ services:
       - "9091:9090"
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+    depends_on:
+      - alertmanager
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
 
   grafana:
     image: grafana/grafana:11.2.0
@@ -70,6 +80,7 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-telemetry}:${POSTGRES_PASSWORD:-telemetry}@postgres:5432/${POSTGRES_DB:-telemetry}
       KAFKA_BOOTSTRAP: kafka:9092
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
     depends_on:
       kafka:
         condition: service_healthy
@@ -83,20 +94,46 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-telemetry}:${POSTGRES_PASSWORD:-telemetry}@postgres:5432/${POSTGRES_DB:-telemetry}
       KAFKA_BOOTSTRAP: kafka:9092
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
     depends_on:
       postgres:
         condition: service_healthy
 
   simulator:
     build: .
-    command: python -m simulator
+    command: python -m simulator --config devices.demo.yaml --scenario drift,spike,current_surge,flow_spike,pressure_drift,co2_offline
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-telemetry}:${POSTGRES_PASSWORD:-telemetry}@postgres:5432/${POSTGRES_DB:-telemetry}
       KAFKA_BOOTSTRAP: kafka:9092
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
     depends_on:
       kafka:
         condition: service_healthy
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.60
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "4317:4317"     # OTLP gRPC (also lets host-run services export traces)
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-telemetry}:${POSTGRES_PASSWORD:-telemetry}@postgres:5432/${POSTGRES_DB:-telemetry}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+    depends_on:
+      postgres:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
 
 volumes:
   telemetry-pg:

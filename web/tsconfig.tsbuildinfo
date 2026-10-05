@@ -1,0 +1,1 @@
+{"root":["./src/App.tsx","./src/api.ts","./src/main.tsx","./src/lib/format.ts","./src/lib/i18n.tsx","./src/views/Anomalies.tsx","./src/views/Fleet.tsx","./src/views/Investigate.tsx"],"version":"5.9.3"}
